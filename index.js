@@ -133,7 +133,6 @@ async function run() {
     });
 
     // ------------------------------------------------
-    const { ObjectId } = require("mongodb");
     app.get("/scholarships/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -227,7 +226,7 @@ async function run() {
 
             {
               $lookup: {
-                from: "scholarships",
+                from: "addScholars",
                 localField: "scholarshipId",
                 foreignField: "_id",
                 as: "scholarshipInfo",
