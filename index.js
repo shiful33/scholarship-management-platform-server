@@ -43,6 +43,25 @@ async function run() {
       res.send("Scholarship Platform Server is Running!");
     });
 
+    // Role base new root create
+    app.get('/users/role/:email', async (req, res) => {
+    try {
+        const email = req.params.email;
+        
+        const user = await usersCollection.findOne({ email });
+
+        if (!user) {
+            return res.status(404).send({ role: 'student' });
+        }
+
+        res.send({ role: user.role || 'student' }); 
+
+    } catch (error) {
+        console.error("Error fetching user role:", error);
+        res.status(500).send({ message: "Failed to fetch user role." });
+    }
+});
+
     // Stripe API Start
     app.post("/create-payment-intent", async (req, res) => {
       const { fees } = req.body;
