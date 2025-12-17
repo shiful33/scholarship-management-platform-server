@@ -310,35 +310,6 @@ async function run() {
       }
     });
 
-    // DELETE a Review (Admin only)
-    app.delete("/reviews/:id", verifyToken, verifyAdmin, async (req, res) => {
-      try {
-        const id = req.params.id;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid review ID format." });
-        }
-
-        const query = { _id: new ObjectId(id) };
-
-        const result = await reviewsCollection.deleteOne(query);
-
-        if (result.deletedCount === 1) {
-          res.send({
-            success: true,
-            message: "Review deleted successfully.",
-          });
-        } else {
-          res.status(404).send({ message: "Review not found." });
-        }
-      } catch (error) {
-        console.error("Admin Review Delete Error:", error);
-        res
-          .status(500)
-          .send({ message: "Server error during review deletion." });
-      }
-    });
-
     // GET Pending Applications for Moderator Review
     app.get(
       "/applications/pending",
@@ -1012,7 +983,6 @@ async function run() {
       }
     });
 
-
     app.patch("/application-status/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
@@ -1031,7 +1001,6 @@ async function run() {
       }
     });
 
-
     app.patch("/application-feedback/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
@@ -1049,8 +1018,6 @@ async function run() {
         res.status(500).send({ message: "Feedback submission failed" });
       }
     });
-
-
 
     // Get Single Scholarship Details (For Moderator/Admin Editing)
     app.get("/scholarship/details/:id", async (req, res) => {
@@ -1236,6 +1203,28 @@ async function run() {
       } catch (error) {
         console.error("Fetch Review Error:", error);
         res.status(500).send({ message: "Failed to fetch review data." });
+      }
+    });
+
+    // DELETE a Review (Admin only)
+    app.delete("/reviews/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const query = { _id: new ObjectId(id) };
+
+        const result = await reviewsCollection.deleteOne(query);
+
+        if (result.deletedCount > 0) {
+          res.send(result);
+        } else {
+          res.status(404).send({ message: "Review not found" });
+        }
+      } catch (error) {
+        console.error("Review Delete Error:", error);
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
       }
     });
 
