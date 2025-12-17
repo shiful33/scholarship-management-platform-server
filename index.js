@@ -42,15 +42,17 @@ const client = new MongoClient(uri, {
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
+    console.log("Error: Authorization header missing.");
     return res
       .status(401)
       .send({ message: "Unauthorized access: No token provided" });
   }
 
   const token = authHeader.split(" ")[1];
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
     if (err) {
-      console.error("Token verification error:", err);
+      console.log("Error: JWT Verification Failed.", err);
       return res
         .status(401)
         .send({ message: "Unauthorized access: Invalid token" });
@@ -61,10 +63,8 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// verifyAdmin
 const verifyAdmin = async (req, res, next) => {
   const email = req.user.email;
-  // Global Variable uses
   const user = await usersCollection.findOne({ email });
 
   if (!user || user.role !== "admin") {
@@ -108,8 +108,15 @@ const verifyModeratorOrAdmin = async (req, res, next) => {
 // JWT Functionality
 app.post("/jwt", async (req, res) => {
   const user = req.body;
-  const token = jwt.sign(user, JWT_SECRET, { expiresIn: "1h" });
+  const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: "1h",
+  });
+  console.log(token);
   res.send({ token });
+});
+
+app.get("/", (req, res) => {
+  res.send("Your Server is running successfully!");
 });
 
 async function run() {
@@ -118,14 +125,14 @@ async function run() {
 
     const db = client.db("scholarship_db");
 
-    addScholarsCollection = db.collection("addScholars");
-    scholarshipsCollection = db.collection("scholarships");
-    usersCollection = db.collection("users");
-    applicationsCollection = db.collection("applications");
-    reviewsCollection = db.collection("reviews");
+    const addScholarsCollection = db.collection("addScholars");
+    const scholarshipsCollection = db.collection("scholarships");
+    const usersCollection = db.collection("users");
+    const applicationsCollection = db.collection("applications");
+    const reviewsCollection = db.collection("reviews");
     // (End of Assignments)
 
-    console.log("Connected to MongoDB!");
+    console.log("Connected to MongoDB and collections initialized!");
 
     // Users api Start ----------------------------
     app.get("/users", async (req, res) => {
@@ -181,7 +188,7 @@ async function run() {
       }
 
       try {
-        const usersCollection = client.db("ScholarshipDB").collection("users");
+        const usersCollection = client.db("scholarship_db").collection("users");
 
         const user = await usersCollection.findOne({ email: email });
 
@@ -204,7 +211,7 @@ async function run() {
 
     app.post("/users", async (req, res) => {
       const user = req.body;
-      const usersCollection = client.db("ScholarshipDB").collection("users");
+      const usersCollection = client.db("scholarship_db").collection("users");
 
       const query = { email: user.email };
       const existingUser = await usersCollection.findOne(query);
@@ -220,6 +227,27 @@ async function run() {
       });
 
       res.send(result);
+    });
+
+    app.get("/user/profile", verifyToken, async (req, res) => {
+      try {
+        const email = req.query.email;
+        const jwtEmail = req.user.email;
+
+        if (email !== jwtEmail) {
+          return res.status(403).send({ message: "Forbidden access" });
+        }
+
+        const user = await usersCollection.findOne({ email: email });
+
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ message: "Internal Server Error" });
+      }
     });
 
     // usersCollection api Start ----------------------------
@@ -463,7 +491,7 @@ async function run() {
     });
 
     // All Scholarship Api
-    app.get("/scholarships/all", async (req, res) => {
+    app.get("/all-scholarships", async (req, res) => {
       try {
         const { search, category, subject, location } = req.query;
         let query = {};
@@ -484,23 +512,39 @@ async function run() {
           query.subjectCategory = subject;
         }
         if (location) {
-          query.location = location;
+          query.country = location;
         }
 
         const scholarships = await addScholarsCollection.find(query).toArray();
-        res.send(scholarships);
+
+        res.json(scholarships);
       } catch (error) {
-        res.status(500).send({ message: "Failed to fetch scholarships." });
+        console.error("Error fetching scholarships:", error);
+
+        res.status(500).json([]);
+      }
+    });
+
+    app.delete("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await scholarshipsCollection.deleteOne(query);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Not deleted" });
       }
     });
 
     // Get single scholarship by ID
-    app.get("/scholarships/:id", async (req, res) => {
+    app.get("/all-scholarships/:id", async (req, res) => {
       try {
         const id = req.params.id;
 
         if (!ObjectId.isValid(id)) {
-            return res.status(400).send({ message: "Invalid Scholarship ID format." });
+          return res
+            .status(400)
+            .send({ message: "Invalid Scholarship ID format." });
         }
 
         const query = { _id: new ObjectId(id) };
@@ -696,6 +740,26 @@ async function run() {
     // Get reviews for a specific scholarship ID
     app.get("/reviews/scholarship/:id", async (req, res) => {});
 
+    // Scholarship Delete API
+    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        console.log(
+          "Attempting to delete from addScholars collection with ID:",
+          id
+        );
+
+        const query = { _id: new ObjectId(id) };
+        const result = await addScholarsCollection.deleteOne(query);
+
+        console.log("Final DB Result:", result);
+        res.send(result);
+      } catch (error) {
+        console.error("Delete Error:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
     // ADD Scholarship  API
     app.post("/addScholars", async (req, res) => {
       const addScholar = req.body;
@@ -798,79 +862,71 @@ async function run() {
     // addScholars api End
 
     // Analytics api Start
-    app.get(
-      "/analytics/platform-stats",
-      verifyToken,
-      verifyAdmin,
-      async (req, res) => {
-        try {
-          const totalUsers = await usersCollection.countDocuments();
-          const totalScholarships = await addScholarsCollection.countDocuments();
-
-          const aggregationResult = await applicationsCollection
-            .aggregate([
-              // Calculate Total Fees Collected
-              {
-                $group: {
-                  _id: null,
-                  totalFeesCollected: { $sum: "$applicationFee" },
-                  applicationData: { $push: "$$ROOT" },
-                },
-              },
-              { $unwind: "$applicationData" },
-
-              // Lookup Scholarship Info
-              {
-                $lookup: {
-                  from: "addScholars",
-                  localField: "applicationData.scholarshipId",
-                  foreignField: "_id",
-                  as: "scholarshipInfo",
-                },
-              },
-              { $unwind: "$scholarshipInfo" },
-
-              // Group by Category to get application count
-              {
-                $group: {
-                  _id: "$scholarshipInfo.scholarshipCategory",
-                  count: { $sum: 1 },
-                  totalFeesCollected: { $first: "$totalFeesCollected" },
-                },
-              },
-
-              // Final Projection
-              {
-                $project: {
-                  _id: 0,
-                  category: "$_id",
-                  count: 1,
-                  totalFeesCollected: 1,
-                },
-              },
-            ])
-            .toArray();
-
-          const totalFeesCollected =
-            aggregationResult[0]?.totalFeesCollected || 0;
-
-          const applicationsByCategory = aggregationResult.map((item) => ({
-            category: item.category,
-            count: item.count,
-          }));
-
-          res.send({
-            totalUsers,
-            totalFeesCollected,
-            totalScholarships,
-            applicationsByCategory,
-          });
-        } catch (error) {
-          console.error("Analytics Error:", error);
-          res.status(500).send({ message: "Failed to fetch analytics data." });
+    app.get("/analytics/platform-stats", verifyToken, async (req, res) => {
+      try {
+        if (
+          !usersCollection ||
+          !scholarshipsCollection ||
+          !applicationsCollection
+        ) {
+          return res
+            .status(500)
+            .send({ message: "Database collections not initialized" });
         }
+
+        const totalUsers = await usersCollection.estimatedDocumentCount();
+        const totalScholarships =
+          await scholarshipsCollection.estimatedDocumentCount();
+
+        const stats = await applicationsCollection
+          .aggregate([
+            {
+              $facet: {
+                totalFees: [
+                  {
+                    $group: {
+                      _id: null,
+                      total: { $sum: { $toDouble: "$applicationFeeS" } },
+                    },
+                  },
+                ],
+                byCategory: [
+                  {
+                    $group: {
+                      _id: "$subjectCategory",
+                      count: { $sum: 1 },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      category: "$_id",
+                      count: 1,
+                    },
+                  },
+                ],
+              },
+            },
+          ])
+          .toArray();
+
+        const totalFeesCollected = stats[0].totalFees[0]?.total || 0;
+        const applicationsByCategory = stats[0].byCategory || [];
+
+        res.send({
+          totalUsers,
+          totalScholarships,
+          totalFeesCollected,
+          applicationsByCategory,
+        });
+      } catch (error) {
+        console.error("Analytics Error Details:", error);
+        res.status(500).send({
+          message: "Internal Server Error",
+          error: error.message,
+        });
       }
-    );
+    });
     // Analytics api End
 
     // GET All Scholarships for Moderator/Admin
@@ -947,60 +1003,54 @@ async function run() {
     );
 
     // Patch Update Application Status (Approve/Reject)
-    app.patch(
-      "/applications/status/:id",
-      verifyToken,
-      verifyModeratorOrAdmin,
-      async (req, res) => {
-        try {
-          const id = req.params.id;
-          const { status, feedback } = req.body;
-
-          if (!ObjectId.isValid(id) || !status) {
-            return res
-              .status(400)
-              .send({ message: "Invalid ID or missing status." });
-          }
-
-          const updateDoc = {
-            $set: {
-              status: status,
-              reviewDate: new Date(),
-              ...(status === "Rejected" && feedback && { feedback: feedback }),
-            },
-          };
-
-          const result = await applicationsCollection.updateOne(
-            { _id: new ObjectId(id) },
-            updateDoc
-          );
-
-          if (result.matchedCount === 0) {
-            return res.status(404).send({ message: "Application not found." });
-          }
-
-          if (status === "Approved") {
-            const application = await applicationsCollection.findOne({
-              _id: new ObjectId(id),
-            });
-            await addScholarsCollection.updateOne(
-              { _id: application.scholarshipId },
-              { $inc: { applicationCount: 1 } }
-            );
-          }
-
-          res.send({
-            success: true,
-            message: `Application status updated to ${status}.`,
-          });
-        } catch (error) {
-          console.error("Application Status Update Error:", error);
-          res
-            .status(500)
-            .send({ message: "Failed to update application status." });
-        }
+    app.get("/all-applications", verifyToken, async (req, res) => {
+      try {
+        const result = await applicationsCollection.find().toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch applications" });
       }
-    );
+    });
+
+
+    app.patch("/application-status/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { status } = req.body;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { status: status },
+        };
+        const result = await applicationsCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Status update failed" });
+      }
+    });
+
+
+    app.patch("/application-feedback/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { feedback } = req.body;
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: { feedback: feedback },
+        };
+        const result = await applicationsCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Feedback submission failed" });
+      }
+    });
+
+
 
     // Get Single Scholarship Details (For Moderator/Admin Editing)
     app.get("/scholarship/details/:id", async (req, res) => {
@@ -1030,49 +1080,46 @@ async function run() {
     });
 
     // Patch Update Scholarship Data (Moderator/Admin Only)
-    app.patch(
-      "/scholarships/:id",
-      async (req, res) => {
-        try {
-          const id = req.params.id;
-          const updatedData = req.body;
+    app.patch("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedData = req.body;
 
-          if (!ObjectId.isValid(id)) {
-            return res
-              .status(400)
-              .send({ message: "Invalid scholarship ID format." });
-          }
-
-          const docToUpdate = {
-            ...updatedData,
-            worldRank: parseInt(updatedData.worldRank),
-            tuitionFee: parseFloat(updatedData.tuitionFee),
-            serviceFee: parseFloat(updatedData.serviceFee),
-          };
-
-          const updateDoc = {
-            $set: docToUpdate,
-          };
-
-          const result = await addScholarsCollection.updateOne(
-            { _id: new ObjectId(id) },
-            updateDoc
-          );
-
-          if (result.matchedCount === 0) {
-            return res.status(404).send({ message: "Scholarship not found." });
-          }
-
-          res.send({
-            success: true,
-            message: "Scholarship updated successfully.",
-          });
-        } catch (error) {
-          console.error("Scholarship Update Error:", error);
-          res.status(500).send({ message: "Failed to update scholarship." });
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .send({ message: "Invalid scholarship ID format." });
         }
+
+        const docToUpdate = {
+          ...updatedData,
+          worldRank: parseInt(updatedData.worldRank),
+          tuitionFee: parseFloat(updatedData.tuitionFee),
+          serviceFee: parseFloat(updatedData.serviceFee),
+        };
+
+        const updateDoc = {
+          $set: docToUpdate,
+        };
+
+        const result = await addScholarsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Scholarship not found." });
+        }
+
+        res.send({
+          success: true,
+          message: "Scholarship updated successfully.",
+        });
+      } catch (error) {
+        console.error("Scholarship Update Error:", error);
+        res.status(500).send({ message: "Failed to update scholarship." });
       }
-    );
+    });
 
     // Get User Profile Data from DB
     app.get("/users/profile", verifyToken, async (req, res) => {
@@ -1191,7 +1238,6 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch review data." });
       }
     });
-    
 
     // Patch Update Review by ID
     app.patch("/reviews/:id", verifyToken, async (req, res) => {
@@ -1208,11 +1254,9 @@ async function run() {
           _id: new ObjectId(id),
         });
         if (!existingReview || existingReview.reviewerEmail !== userEmail) {
-          return res
-            .status(403)
-            .send({
-              message: "Forbidden: You can only edit your own reviews.",
-            });
+          return res.status(403).send({
+            message: "Forbidden: You can only edit your own reviews.",
+          });
         }
 
         const filter = { _id: new ObjectId(id) };
@@ -1245,8 +1289,25 @@ async function run() {
       }
     });
 
+    // Get User Role by Email
+    app.get("/user/role/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
 
+      if (!usersCollection) {
+        return res.status(500).send({ message: "Database not initialized" });
+      }
 
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user) {
+        return res
+          .status(404)
+          .send({ role: "student", message: "User not in DB" });
+      }
+
+      res.send({ role: user.role, status: user.status });
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
