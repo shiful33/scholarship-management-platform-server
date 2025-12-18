@@ -293,22 +293,6 @@ async function run() {
     });
     // Users api End
 
-    // Extra Review for see
-    app.get("/reviews/:scholarshipId", async (req, res) => {
-      try {
-        const scholarshipId = req.params.scholarshipId;
-
-        const reviews = await reviewsCollection
-          .find({ scholarshipId: scholarshipId })
-          .sort({ createdAt: -1 })
-          .toArray();
-
-        res.send(reviews);
-      } catch (error) {
-        console.error("Error fetching reviews:", error);
-        res.status(500).send({ message: "Failed to retrieve reviews." });
-      }
-    });
 
     // GET Pending Applications for Moderator Review
     app.get(
@@ -532,27 +516,7 @@ async function run() {
       }
     });
 
-    // POST Add a new review
-    app.post("/reviews", async (req, res) => {
-      try {
-        const review = req.body;
-
-        review.scholarshipId = new ObjectId(review.scholarshipId);
-
-        if (!review.reviewDate) {
-          review.reviewDate = new Date();
-        }
-
-        const result = await reviewsCollection.insertOne(review);
-        res.send(result);
-      } catch (error) {
-        console.error("Error inserting review:", error);
-        res
-          .status(500)
-          .send({ message: "Failed to submit review due to server error." });
-      }
-    });
-
+    
     // GET User's Own Applications
     app.get("/applications/my-applications", verifyToken, async (req, res) => {
       try {
@@ -708,28 +672,6 @@ async function run() {
       }
     });
 
-    // Get reviews for a specific scholarship ID
-    app.get("/reviews/scholarship/:id", async (req, res) => {});
-
-    // Scholarship Delete API
-    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        console.log(
-          "Attempting to delete from addScholars collection with ID:",
-          id
-        );
-
-        const query = { _id: new ObjectId(id) };
-        const result = await addScholarsCollection.deleteOne(query);
-
-        console.log("Final DB Result:", result);
-        res.send(result);
-      } catch (error) {
-        console.error("Delete Error:", error);
-        res.status(500).send({ message: "Internal Server Error" });
-      }
-    });
 
     // ADD Scholarship  API
     app.post("/addScholars", async (req, res) => {
@@ -1183,6 +1125,89 @@ async function run() {
       }
     });
 
+    // Get User Role by Email
+    app.get("/user/role/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (!usersCollection) {
+        return res.status(500).send({ message: "Database not initialized" });
+      }
+
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user) {
+        return res
+          .status(404)
+          .send({ role: "student", message: "User not in DB" });
+      }
+
+      res.send({ role: user.role, status: user.status });
+    });
+
+
+    // Get reviews for a specific scholarship ID
+    app.get("/reviews/scholarship/:id", async (req, res) => {});
+
+    // Scholarship Delete API
+    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        console.log(
+          "Attempting to delete from addScholars collection with ID:",
+          id
+        );
+
+        const query = { _id: new ObjectId(id) };
+        const result = await addScholarsCollection.deleteOne(query);
+
+        console.log("Final DB Result:", result);
+        res.send(result);
+      } catch (error) {
+        console.error("Delete Error:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    // Extra Review for see
+    app.get("/reviews/:scholarshipId", async (req, res) => {
+      try {
+        const scholarshipId = req.params.scholarshipId;
+
+        const reviews = await reviewsCollection
+          .find({ scholarshipId: scholarshipId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Failed to retrieve reviews." });
+      }
+    });
+
+
+    // POST Add a new review
+    app.post("/reviews", async (req, res) => {
+      try {
+        const review = req.body;
+
+        const result = await reviewsCollection.insertOne(review);
+
+        if (result.insertedId) {
+          res.status(201).send(result);
+        } else {
+          res.status(400).send({ message: "Failed to add review" });
+        }
+      } catch (error) {
+        console.error("Review Error:", error);
+        res.status(500).send({
+          message: "Internal Server Error",
+          error: error.message,
+        });
+      }
+    });
+
     // Get Single Review by ID
     app.get("/reviews/single/:id", async (req, res) => {
       try {
@@ -1278,25 +1303,7 @@ async function run() {
       }
     });
 
-    // Get User Role by Email
-    app.get("/user/role/:email", verifyToken, async (req, res) => {
-      const email = req.params.email;
-
-      if (!usersCollection) {
-        return res.status(500).send({ message: "Database not initialized" });
-      }
-
-      const query = { email: email };
-      const user = await usersCollection.findOne(query);
-
-      if (!user) {
-        return res
-          .status(404)
-          .send({ role: "student", message: "User not in DB" });
-      }
-
-      res.send({ role: user.role, status: user.status });
-    });
+    
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
