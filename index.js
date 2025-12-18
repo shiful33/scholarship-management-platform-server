@@ -18,20 +18,22 @@ let reviewsCollection;
 
 app.use(
   cors({
-    origin: ["http://localhost:5174"],
+    origin: ['https://scholarship-management-c-5011a.web.app', 'http://localhost:5173'],
     credentials: true,
   })
 );
 app.use(express.json());
 
 // Middleware
-app.use(
-  cors({
-    origin: ["http://localhost:5174"],
-    credentials: true,
-  })
-);
-app.use(express.json());
+/* const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded?.email;
+  const user = await usersCollection.findOne({ email });
+
+  if (!user || user.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden access: Admin required" });
+  }
+  next();
+}; */
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro`;
 
@@ -122,14 +124,14 @@ async function run() {
 
     const db = client.db("scholarship_db");
 
-    const addScholarsCollection = db.collection("addScholars");
-    const scholarshipCollection = client
+    addScholarsCollection = db.collection("addScholars");
+    scholarshipCollection = client
       .db("scholarship_db")
       .collection("addScholars");
-    const scholarshipsCollection = db.collection("scholarships");
-    const usersCollection = db.collection("users");
-    const applicationsCollection = db.collection("applications");
-    const reviewsCollection = db.collection("reviews");
+    scholarshipsCollection = db.collection("scholarships");
+    usersCollection = db.collection("users");
+    applicationsCollection = db.collection("applications");
+    reviewsCollection = db.collection("reviews");
     // (End of Assignments)
 
     console.log("Connected to MongoDB and collections initialized!");
@@ -414,38 +416,17 @@ async function run() {
 
     // All Scholarship Api
     app.get("/all-scholarships", async (req, res) => {
-      try {
-        const { search, category, subject, location } = req.query;
-        let query = {};
+      const { search, category, subject } = req.query;
+      let query = {};
 
-        if (search) {
-          const searchRegex = new RegExp(search, "i");
-          query.$or = [
-            { scholarshipName: searchRegex },
-            { universityName: searchRegex },
-            { degree: searchRegex },
-          ];
-        }
-
-        if (category) {
-          query.scholarshipCategory = category;
-        }
-        if (subject) {
-          query.subjectCategory = subject;
-        }
-        if (location) {
-          query.country = location;
-        }
-
-        const scholarships = await addScholarsCollection.find(query).toArray();
-
-        res.json(scholarships);
-      } catch (error) {
-        console.error("Error fetching scholarships:", error);
-
-        res.status(500).json([]);
+      if (search) {
+        query.scholarshipName = { $regex: search, $options: "i" };
       }
+
+      const result = await scholarshipCollection.find(query).toArray();
+      res.send(result);
     });
+
 
     app.delete("/scholarships/:id", async (req, res) => {
       try {
@@ -1229,23 +1210,20 @@ async function run() {
         const updatedReview = req.body;
         const filter = { _id: new ObjectId(id) };
 
-        // টোকেন থেকে ইমেইল নিয়ে ভেরিফাই করা (সিকিউরিটির জন্য)
         const userEmail = req.decoded?.email;
         const review = await reviewsCollection.findOne(filter);
 
         if (review.reviewerEmail !== userEmail) {
-          return res
-            .status(403)
-            .send({
-              message: "Forbidden: You can only edit your own reviews.",
-            });
+          return res.status(403).send({
+            message: "Forbidden: You can only edit your own reviews.",
+          });
         }
 
         const updateDoc = {
           $set: {
             rating: updatedReview.rating,
             comment: updatedReview.comment,
-            reviewDate: new Date(), // আপডেটের সময় তারিখ আপডেট করে দেওয়া ভালো
+            reviewDate: new Date(),
           },
         };
 
