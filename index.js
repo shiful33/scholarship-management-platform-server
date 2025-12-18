@@ -18,14 +18,19 @@ let reviewsCollection;
 
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5174"],
     credentials: true,
   })
 );
 app.use(express.json());
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: ["http://localhost:5174"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro`;
@@ -42,23 +47,15 @@ const client = new MongoClient(uri, {
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
-    console.log("Error: Authorization header missing.");
-    return res
-      .status(401)
-      .send({ message: "Unauthorized access: No token provided" });
+    return res.status(401).send({ message: "Authorization header missing" });
   }
 
   const token = authHeader.split(" ")[1];
-
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
     if (err) {
-      console.log("Error: JWT Verification Failed.", err);
-      return res
-        .status(401)
-        .send({ message: "Unauthorized access: Invalid token" });
+      return res.status(403).send({ message: "Forbidden Access" });
     }
-
-    req.user = decoded;
+    req.decoded = decoded;
     next();
   });
 };
@@ -235,9 +232,9 @@ async function run() {
     app.get("/user/profile", verifyToken, async (req, res) => {
       try {
         const email = req.query.email;
-        const jwtEmail = req.user.email;
+        const decodedEmail = req.decoded?.email;
 
-        if (email !== jwtEmail) {
+        if (email !== decodedEmail) {
           return res.status(403).send({ message: "Forbidden access" });
         }
 
@@ -249,6 +246,7 @@ async function run() {
 
         res.send(user);
       } catch (error) {
+        console.error("Profile Fetch Error:", error);
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
@@ -262,39 +260,6 @@ async function run() {
       verifyAdmin,
       async (req, res) => {}
     );
-
-    // POST User Review
-    app.post("/reviews", verifyToken, async (req, res) => {
-      try {
-        const reviewData = req.body;
-
-        if (
-          !reviewData.reviewerEmail ||
-          !reviewData.scholarshipId ||
-          !reviewData.rating
-        ) {
-          return res.status(400).send({
-            message:
-              "Missing required review fields (email, scholarship ID, or rating).",
-          });
-        }
-
-        const reviewToInsert = {
-          ...reviewData,
-          createdAt: new Date(),
-        };
-
-        const result = await reviewsCollection.insertOne(reviewToInsert);
-        res.status(201).send({
-          message: "Review submitted successfully!",
-          reviewId: result.insertedId,
-        });
-      } catch (error) {
-        console.error("Error submitting review:", error);
-        res.status(500).send({ message: "Failed to submit review." });
-      }
-    });
-    // Users api End
 
     // GET Pending Applications for Moderator Review
     app.get(
@@ -658,21 +623,6 @@ async function run() {
       }
     );
 
-    // Get Fetch latest reviews for the homepage
-    app.get("/latest-reviews", async (req, res) => {
-      try {
-        const latestReviews = await reviewsCollection
-          .find({})
-          .sort({ reviewDate: -1 })
-          .limit(3)
-          .toArray();
-        res.send(latestReviews);
-      } catch (error) {
-        console.error("Error fetching latest reviews:", error);
-        res.status(500).send({ message: "Failed to fetch latest reviews." });
-      }
-    });
-
     // ADD Scholarship  API
     app.post("/addScholars", async (req, res) => {
       const addScholar = req.body;
@@ -964,6 +914,26 @@ async function run() {
       }
     });
 
+    // Scholarship Delete API
+    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        console.log(
+          "Attempting to delete from addScholars collection with ID:",
+          id
+        );
+
+        const query = { _id: new ObjectId(id) };
+        const result = await addScholarsCollection.deleteOne(query);
+
+        console.log("Final DB Result:", result);
+        res.send(result);
+      } catch (error) {
+        console.error("Delete Error:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
     // Patch Update Scholarship Data (Moderator/Admin Only)
     app.patch("/scholarships/:id", async (req, res) => {
       try {
@@ -1078,26 +1048,25 @@ async function run() {
     // Get User's Own Reviews
     app.get("/user/my-reviews", verifyToken, async (req, res) => {
       try {
-        const userEmail = req.user.email;
         const emailFromQuery = req.query.email;
 
-        if (emailFromQuery !== userEmail) {
-          console.warn(
-            `Access attempt blocked for email: ${emailFromQuery} (JWT: ${userEmail})`
-          );
+        const userEmail = req.decoded?.email;
+
+        if (!emailFromQuery || emailFromQuery !== userEmail) {
           return res
             .status(403)
             .send({ message: "Forbidden access: Email mismatch." });
         }
 
         const query = { reviewerEmail: userEmail };
-
         const myReviews = await reviewsCollection.find(query).toArray();
 
         res.send(myReviews);
       } catch (error) {
         console.error("Fetch My Reviews Error:", error);
-        res.status(500).send({ message: "Failed to fetch user reviews." });
+        res
+          .status(500)
+          .send({ message: "Internal Server Error", error: error.message });
       }
     });
 
@@ -1121,26 +1090,52 @@ async function run() {
       res.send({ role: user.role, status: user.status });
     });
 
+    // Get Fetch latest reviews for the homepage
+    app.get("/latest-reviews", async (req, res) => {
+      try {
+        const latestReviews = await reviewsCollection
+          .find({})
+          .sort({ reviewDate: -1 })
+          .toArray();
+        res.send(latestReviews);
+      } catch (error) {
+        console.error("Error fetching latest reviews:", error);
+        res.status(500).send({ message: "Failed to fetch latest reviews." });
+      }
+    });
+
     // Get reviews for a specific scholarship ID
     app.get("/reviews/scholarship/:id", async (req, res) => {});
 
-    // Scholarship Delete API
-    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
+    // POST User Review
+    app.post("/reviews", verifyToken, async (req, res) => {
       try {
-        const id = req.params.id;
-        console.log(
-          "Attempting to delete from addScholars collection with ID:",
-          id
-        );
+        const reviewData = req.body;
 
-        const query = { _id: new ObjectId(id) };
-        const result = await addScholarsCollection.deleteOne(query);
+        if (
+          !reviewData.reviewerEmail ||
+          !reviewData.scholarshipId ||
+          !reviewData.rating
+        ) {
+          return res.status(400).send({
+            message:
+              "Missing required review fields (email, scholarship ID, or rating).",
+          });
+        }
 
-        console.log("Final DB Result:", result);
-        res.send(result);
+        const reviewToInsert = {
+          ...reviewData,
+          createdAt: new Date(),
+        };
+
+        const result = await reviewsCollection.insertOne(reviewToInsert);
+        res.status(201).send({
+          message: "Review submitted successfully!",
+          reviewId: result.insertedId,
+        });
       } catch (error) {
-        console.error("Delete Error:", error);
-        res.status(500).send({ message: "Internal Server Error" });
+        console.error("Error submitting review:", error);
+        res.status(500).send({ message: "Failed to submit review." });
       }
     });
 
@@ -1231,49 +1226,33 @@ async function run() {
     app.patch("/reviews/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
-        const userEmail = req.user.email;
         const updatedReview = req.body;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid Review ID." });
-        }
-
-        const existingReview = await reviewsCollection.findOne({
-          _id: new ObjectId(id),
-        });
-        if (!existingReview || existingReview.reviewerEmail !== userEmail) {
-          return res.status(403).send({
-            message: "Forbidden: You can only edit your own reviews.",
-          });
-        }
-
         const filter = { _id: new ObjectId(id) };
+
+        // টোকেন থেকে ইমেইল নিয়ে ভেরিফাই করা (সিকিউরিটির জন্য)
+        const userEmail = req.decoded?.email;
+        const review = await reviewsCollection.findOne(filter);
+
+        if (review.reviewerEmail !== userEmail) {
+          return res
+            .status(403)
+            .send({
+              message: "Forbidden: You can only edit your own reviews.",
+            });
+        }
 
         const updateDoc = {
           $set: {
             rating: updatedReview.rating,
             comment: updatedReview.comment,
+            reviewDate: new Date(), // আপডেটের সময় তারিখ আপডেট করে দেওয়া ভালো
           },
         };
 
         const result = await reviewsCollection.updateOne(filter, updateDoc);
-
-        if (result.matchedCount === 0) {
-          return res
-            .status(404)
-            .send({ message: "Review not found for update." });
-        }
-        if (result.modifiedCount === 0) {
-          return res.send({
-            success: true,
-            message: "Review data is already up to date.",
-          });
-        }
-
-        res.send({ success: true, message: "Review updated successfully." });
+        res.send(result);
       } catch (error) {
-        console.error("Review Update Error:", error);
-        res.status(500).send({ message: "Failed to update review." });
+        res.status(500).send({ message: "Failed to update review" });
       }
     });
 
