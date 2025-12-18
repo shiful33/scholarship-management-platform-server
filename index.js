@@ -126,6 +126,9 @@ async function run() {
     const db = client.db("scholarship_db");
 
     const addScholarsCollection = db.collection("addScholars");
+    const scholarshipCollection = client
+      .db("scholarship_db")
+      .collection("addScholars");
     const scholarshipsCollection = db.collection("scholarships");
     const usersCollection = db.collection("users");
     const applicationsCollection = db.collection("applications");
@@ -292,7 +295,6 @@ async function run() {
       }
     });
     // Users api End
-
 
     // GET Pending Applications for Moderator Review
     app.get(
@@ -516,7 +518,6 @@ async function run() {
       }
     });
 
-    
     // GET User's Own Applications
     app.get("/applications/my-applications", verifyToken, async (req, res) => {
       try {
@@ -672,7 +673,6 @@ async function run() {
       }
     });
 
-
     // ADD Scholarship  API
     app.post("/addScholars", async (req, res) => {
       const addScholar = req.body;
@@ -775,56 +775,36 @@ async function run() {
     // addScholars api End
 
     // Analytics api Start
-    app.get("/analytics/platform-stats", verifyToken, async (req, res) => {
+    app.get("/analytics/platform-stats", async (req, res) => {
       try {
-        if (
-          !usersCollection ||
-          !scholarshipsCollection ||
-          !applicationsCollection
-        ) {
-          return res
-            .status(500)
-            .send({ message: "Database collections not initialized" });
-        }
-
         const totalUsers = await usersCollection.estimatedDocumentCount();
-        const totalScholarships =
-          await scholarshipsCollection.estimatedDocumentCount();
 
-        const stats = await applicationsCollection
+        const totalScholarships =
+          await scholarshipCollection.estimatedDocumentCount();
+
+        const applications = await applicationsCollection.find().toArray();
+
+        const totalFeesCollected = applications.reduce((sum, app) => {
+          return sum + (parseFloat(app.paidFees) || 0);
+        }, 0);
+
+        const applicationsByCategory = await applicationsCollection
           .aggregate([
             {
-              $facet: {
-                totalFees: [
-                  {
-                    $group: {
-                      _id: null,
-                      total: { $sum: { $toDouble: "$applicationFeeS" } },
-                    },
-                  },
-                ],
-                byCategory: [
-                  {
-                    $group: {
-                      _id: "$subjectCategory",
-                      count: { $sum: 1 },
-                    },
-                  },
-                  {
-                    $project: {
-                      _id: 0,
-                      category: "$_id",
-                      count: 1,
-                    },
-                  },
-                ],
+              $group: {
+                _id: "$scholarshipCategory",
+                count: { $sum: 1 },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $ifNull: ["$_id", "Not Specified"] },
+                count: 1,
               },
             },
           ])
           .toArray();
-
-        const totalFeesCollected = stats[0].totalFees[0]?.total || 0;
-        const applicationsByCategory = stats[0].byCategory || [];
 
         res.send({
           totalUsers,
@@ -833,11 +813,7 @@ async function run() {
           applicationsByCategory,
         });
       } catch (error) {
-        console.error("Analytics Error Details:", error);
-        res.status(500).send({
-          message: "Internal Server Error",
-          error: error.message,
-        });
+        res.status(500).send({ message: "Error", error: error.message });
       }
     });
     // Analytics api End
@@ -1145,7 +1121,6 @@ async function run() {
       res.send({ role: user.role, status: user.status });
     });
 
-
     // Get reviews for a specific scholarship ID
     app.get("/reviews/scholarship/:id", async (req, res) => {});
 
@@ -1185,7 +1160,6 @@ async function run() {
         res.status(500).send({ message: "Failed to retrieve reviews." });
       }
     });
-
 
     // POST Add a new review
     app.post("/reviews", async (req, res) => {
@@ -1302,8 +1276,6 @@ async function run() {
         res.status(500).send({ message: "Failed to update review." });
       }
     });
-
-    
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
