@@ -16,16 +16,14 @@ let usersCollection;
 let applicationsCollection;
 let reviewsCollection;
 
-app.use(
-  cors({
-    origin: [
-      'http://localhost:5173',
-      'https://scholarship-management-c-5011a.web.app',
-      'https://scholarship-management-c-5011a.firebaseapp.com'
-    ],
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'https://scholarship-management-c-5011a.web.app',
+    'https://scholarship-management-c-5011a.firebaseapp.com'
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // Middleware
