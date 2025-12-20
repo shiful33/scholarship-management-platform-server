@@ -7,38 +7,22 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
 
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.ACCESS_TOKEN_SECRET;
-
-// Global Collection Variable
-let addScholarsCollection;
-let scholarshipsCollection;
-let usersCollection;
-let applicationsCollection;
-let reviewsCollection;
-
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'https://scholarship-management-c-5011a.web.app',
-    'https://scholarship-management-c-5011a.firebaseapp.com'
-  ],
-  credentials: true
-}));
-app.use(express.json());
-
-// Middleware
-/* const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded?.email;
-  const user = await usersCollection.findOne({ email });
-
-  if (!user || user.role !== "admin") {
-    return res.status(403).send({ message: "Forbidden access: Admin required" });
-  }
-  next();
-}; */
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro`;
 
+// Middleware
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://scholarship-management-c-5011a.web.app",
+      "https://scholarship-management-c-5011a.firebaseapp.com",
+    ],
+    credentials: true,
+  })
+);
+app.use(express.json());
+
+// MongoDB Client Setup
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -47,63 +31,16 @@ const client = new MongoClient(uri, {
   },
 });
 
-// verifyToken
+// Middlewares verifyToken
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).send({ message: "Authorization header missing" });
-  }
-
+  if (!authHeader) return res.status(401).send({ message: "Unauthorized" });
   const token = authHeader.split(" ")[1];
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).send({ message: "Forbidden Access" });
-    }
+    if (err) return res.status(403).send({ message: "Forbidden" });
     req.decoded = decoded;
     next();
   });
-};
-
-const verifyAdmin = async (req, res, next) => {
-  const email = req.user.email;
-  const user = await usersCollection.findOne({ email });
-
-  if (!user || user.role !== "admin") {
-    return res
-      .status(403)
-      .send({ message: "Forbidden access: Admin required" });
-  }
-  next();
-};
-
-// verifyModerator
-const verifyModerator = async (req, res, next) => {
-  const email = req.user.email;
-  // Global Variable uses
-  const user = await usersCollection.findOne({ email });
-
-  if (!user || (user.role !== "moderator" && user.role !== "admin")) {
-    return res
-      .status(403)
-      .send({ message: "Forbidden access: Moderator or Admin required" });
-  }
-  next();
-};
-
-// verifyModeratorOrAdmin
-const verifyModeratorOrAdmin = async (req, res, next) => {
-  const email = req.user.email;
-  const query = { email: email };
-
-  const user = await usersCollection.findOne(query);
-  const role = user?.role;
-
-  if (role !== "moderator" && role !== "admin") {
-    return res
-      .status(403)
-      .send({ message: "Forbidden access: Requires Moderator or Admin role." });
-  }
-  next();
 };
 
 // JWT Functionality
@@ -116,13 +53,17 @@ app.post("/jwt", async (req, res) => {
   res.send({ token });
 });
 
-app.get("/", (req, res) => {
-  res.send("Your Server is running successfully!");
-});
+// Database Connection Helper
+let db,
+  addScholarsCollection,
+  scholarshipsCollection,
+  scholarshipCollection,
+  usersCollection,
+  applicationsCollection,
+  reviewsCollection;
 
 async function run() {
   try {
-    await client.connect();
 
     const db = client.db("scholarship_db");
 
@@ -135,6 +76,64 @@ async function run() {
     applicationsCollection = db.collection("applications");
     reviewsCollection = db.collection("reviews");
     // (End of Assignments)
+
+    console.log("Connected to MongoDB and collections initialized!");
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.user.email;
+      const user = await usersCollection.findOne({ email });
+
+      if (!user || user.role !== "admin") {
+        return res
+          .status(403)
+          .send({ message: "Forbidden access: Admin required" });
+      }
+      next();
+    };
+
+    // verifyModerator
+    const verifyModerator = async (req, res, next) => {
+      const email = req.user.email;
+      // Global Variable uses
+      const user = await usersCollection.findOne({ email });
+
+      if (!user || (user.role !== "moderator" && user.role !== "admin")) {
+        return res
+          .status(403)
+          .send({ message: "Forbidden access: Moderator or Admin required" });
+      }
+      next();
+    };
+
+    // verifyModeratorOrAdmin
+    const verifyModeratorOrAdmin = async (req, res, next) => {
+      const email = req.user.email;
+      const query = { email: email };
+
+      const user = await usersCollection.findOne(query);
+      const role = user?.role;
+
+      if (role !== "moderator" && role !== "admin") {
+        return res
+          .status(403)
+          .send({
+            message: "Forbidden access: Requires Moderator or Admin role.",
+          });
+      }
+      next();
+    };
+
+    app.get("/", (req, res) => {
+      res.send("Scholarship Server is running perfectly!");
+    });
+
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1h",
+      });
+      res.send({ token });
+    });
 
     console.log("Connected to MongoDB and collections initialized!");
 
@@ -418,17 +417,19 @@ async function run() {
 
     // All Scholarship Api
     app.get("/all-scholarships", async (req, res) => {
-      const { search, category, subject } = req.query;
-      let query = {};
-
-      if (search) {
-        query.scholarshipName = { $regex: search, $options: "i" };
+      try {
+        await connectDB();
+        const { search } = req.query;
+        let query = {};
+        if (search) {
+          query.scholarshipName = { $regex: search, $options: "i" };
+        }
+        const result = await addScholarsCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: error.message });
       }
-
-      const result = await scholarshipCollection.find(query).toArray();
-      res.send(result);
     });
-
 
     app.delete("/scholarships/:id", async (req, res) => {
       try {
@@ -522,16 +523,10 @@ async function run() {
 
     app.get("/dashboard/my-applications", async (req, res) => {
       const email = req.query.email;
-
-      if (!email) {
-        return res
-          .status(400)
-          .send({ message: "Email parameter is required." });
-      }
-
+      if (!email) return res.status(400).send({ message: "Email required" });
       try {
+        await connectDB();
         const query = { applicantEmail: email };
-
         const myApplications = await applicationsCollection
           .aggregate([
             { $match: query },
@@ -553,10 +548,6 @@ async function run() {
               $project: {
                 _id: 1,
                 status: 1,
-                transactionId: 1,
-                paymentDate: 1,
-                appliedDate: 1,
-                scholarshipId: 1,
                 scholarshipTitle: "$scholarshipDetails.scholarshipName",
                 scholarshipCategory: "$scholarshipDetails.scholarshipCategory",
                 paidFees: 1,
@@ -564,16 +555,11 @@ async function run() {
             },
           ])
           .toArray();
-
         res.send(myApplications);
       } catch (error) {
-        console.error("Failed to fetch user applications:", error);
-        res
-          .status(500)
-          .send({ message: "Failed to retrieve applications from database." });
+        res.status(500).send({ message: "Error fetching data" });
       }
     });
-
     // DELETE single application
     app.delete(
       "/applications/:id",
@@ -620,7 +606,7 @@ async function run() {
       const { email } = req.query;
       const query = email ? { userEmail: email } : {};
 
-      const options = { sort: { createdAt: -1 } }; // Assuming field name is 'createdAt'
+      const options = { sort: { createdAt: -1 } };
 
       const cursor = addScholarsCollection.find(query, options);
       const result = await cursor.toArray();
@@ -1244,17 +1230,18 @@ async function run() {
   } finally {
   }
 }
+
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-    res.send("Server is running perfectly!");
+  res.send("Server is running perfectly!");
 });
 
-if (process.env.NODE_ENV !== 'production') {
-    const port = process.env.PORT || 3000;
-    app.listen(port, () => {
-        console.log(`Server is running on port ${port}`);
-    });
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
 }
 
+// Vercel
 module.exports = app;
