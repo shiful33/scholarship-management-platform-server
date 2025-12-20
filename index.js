@@ -8,9 +8,10 @@ const jwt = require("jsonwebtoken");
 
 const port = process.env.PORT || 3000;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro`;
+// const uri = "mongodb+srv://<db_username>:<db_password>@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro";
 
 // Middleware
-app.use(
+/* app.use(
   cors({
     origin: [
       "http://localhost:5173",
@@ -19,7 +20,9 @@ app.use(
     ],
     credentials: true,
   })
-);
+); */
+
+app.use(cors());
 app.use(express.json());
 
 // MongoDB Client Setup
@@ -418,7 +421,7 @@ async function run() {
     // All Scholarship Api
     app.get("/all-scholarships", async (req, res) => {
       try {
-        await connectDB();
+        // await run();
         const { search } = req.query;
         let query = {};
         if (search) {
@@ -525,7 +528,6 @@ async function run() {
       const email = req.query.email;
       if (!email) return res.status(400).send({ message: "Email required" });
       try {
-        await connectDB();
         const query = { applicantEmail: email };
         const myApplications = await applicationsCollection
           .aggregate([
