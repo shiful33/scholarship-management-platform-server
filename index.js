@@ -363,7 +363,7 @@ async function run() {
 
     app.post("/applications", async (req, res) => {
       const application = req.body;
-      console.log(application)
+      console.log(application);
       const scholarshipId = application.scholarshipId;
 
       try {
@@ -451,11 +451,12 @@ async function run() {
         }
         res.send(result);
       } catch (error) {
-        console.log(error)
-        res.status(500).send({ message: "Invalid ID format or server error.", error });
+        console.log(error);
+        res
+          .status(500)
+          .send({ message: "Invalid ID format or server error.", error });
       }
     });
-
 
     /* app.get("/all-scholarships/checkout/:id", async (req, res) => {
       try {
@@ -475,7 +476,6 @@ async function run() {
         res.status(500).send({ message: "Server error" });
       }
     }); */
-    
 
     app.get("/scholarships/:id", async (req, res) => {
       try {
@@ -730,44 +730,60 @@ async function run() {
       }
     });
 
-    app.get("/dashboard/my-applications", async (req, res) => {
-      const email = req.query.email;
-      if (!email) return res.status(400).send({ message: "Email required" });
+    app.get("/dashboard/my-applications", verifyToken, async (req, res) => {
       try {
-        const query = { applicantEmail: email };
-        const result = await applicationsCollection
-          .aggregate([
-            { $match: query },
-            /* {
-              $lookup: {
-                from: "addScholars",
-                localField: "scholarshipId",
-                foreignField: "_id",
-                as: "scholarshipDetails",
-              },
-            },
-            {
-              $unwind: {
-                path: "$scholarshipDetails",
-                preserveNullAndEmptyArrays: true,
-              },
-            }, */
-            /* {
-              $project: {
-                _id: 1,
-                status: 1,
-                scholarshipTitle: "$scholarshipDetails.scholarshipName",
-                scholarshipCategory: "$scholarshipDetails.scholarshipCategory",
-                paidFees: 1,
-              },
-            }, */
-          ])
+        const email = req.query.email;
+
+        // Security check
+        if (!email || req.decoded.email !== email) {
+          return res.status(403).json({ message: "Forbidden access" });
+        }
+
+        // First get applications without lookup
+        const applications = await applicationsCollection
+          .find({ applicantEmail: email })
           .toArray();
-        res.send(myApplications);
+
+        // Manually filter and lookup only valid scholarshipId
+        const validApplications = [];
+        for (const app of applications) {
+          if (
+            app.scholarshipId &&
+            typeof app.scholarshipId === "string" &&
+            app.scholarshipId.length === 24
+          ) {
+            try {
+              const scholarship = await addScholarsCollection.findOne({
+                _id: new ObjectId(app.scholarshipId),
+              });
+
+              validApplications.push({
+                ...app,
+                scholarshipDetails: scholarship || {},
+              });
+            } catch (idError) {
+              // Invalid ID — skip lookup, keep application with empty details
+              validApplications.push({
+                ...app,
+                scholarshipDetails: {},
+              });
+            }
+          } else {
+            // Invalid or missing scholarshipId
+            validApplications.push({
+              ...app,
+              scholarshipDetails: {},
+            });
+          }
+        }
+
+        res.json(validApplications);
       } catch (error) {
-        res.status(500).send({ message: "Error fetching data" });
+        console.error("My Applications Error:", error);
+        res.status(500).json([]); // খালি অ্যারে পাঠান যাতে ফ্রন্টএন্ড ক্র্যাশ না করে
       }
     });
+
     // DELETE single application
     app.delete(
       "/applications/:id",
