@@ -735,7 +735,7 @@ async function run() {
       if (!email) return res.status(400).send({ message: "Email required" });
       try {
         const query = { applicantEmail: email };
-        const myApplications = await applicationsCollection
+        const result = await applicationsCollection
           .aggregate([
             { $match: query },
             /* {
