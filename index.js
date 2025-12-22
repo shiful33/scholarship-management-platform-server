@@ -1188,23 +1188,13 @@ async function run() {
 
     // POST Add a new review
     app.post("/reviews", async (req, res) => {
-      try {
-        const review = req.body;
-
-        const result = await reviewsCollection.insertOne(review);
-
-        if (result.insertedId) {
-          res.status(201).send(result);
-        } else {
-          res.status(400).send({ message: "Failed to add review" });
-        }
-      } catch (error) {
-        console.error("Review Error:", error);
-        res.status(500).send({
-          message: "Internal Server Error",
-          error: error.message,
-        });
-      }
+      const review = {
+        ...req.body,
+        reviewDate: new Date(),
+        reviewerEmail: req.user?.email || "anonymous",
+      };
+      const result = await reviewsCollection.insertOne(review);
+      res.json({ success: true, insertedId: result.insertedId });
     });
 
     // Get Single Review by ID
