@@ -692,7 +692,7 @@ async function run() {
         const myApplications = await applicationsCollection
           .aggregate([
             { $match: query },
-            {
+            /* {
               $lookup: {
                 from: "scholarships",
                 localField: "scholarshipId",
@@ -705,8 +705,8 @@ async function run() {
                 path: "$scholarshipDetails",
                 preserveNullAndEmptyArrays: true,
               },
-            },
-            {
+            }, */
+            /* {
               $project: {
                 _id: 1,
                 status: 1,
@@ -716,7 +716,7 @@ async function run() {
                 deadline: "$scholarshipDetails.applicationDeadline",
                 feedback: 1,
               },
-            },
+            }, */
             { $sort: { appliedDate: -1 } },
           ])
           .toArray();
