@@ -8,7 +8,6 @@ const jwt = require("jsonwebtoken");
 
 const port = process.env.PORT || 3000;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro`;
-// const uri = "mongodb+srv://<db_username>:<db_password>@ahmedtpro.4kxy1cz.mongodb.net/?appName=AhmedTPro";
 
 // Middleware
 /* app.use(
@@ -67,14 +66,13 @@ let db,
 
 async function run() {
   try {
-
     const db = client.db("scholarship_db");
 
     addScholarsCollection = db.collection("addScholars");
     scholarshipCollection = client
       .db("scholarship_db")
       .collection("addScholars");
-    scholarshipsCollection = db.collection("scholarships");
+    // scholarshipsCollection = db.collection("scholarships");
     usersCollection = db.collection("users");
     applicationsCollection = db.collection("applications");
     reviewsCollection = db.collection("reviews");
@@ -117,11 +115,9 @@ async function run() {
       const role = user?.role;
 
       if (role !== "moderator" && role !== "admin") {
-        return res
-          .status(403)
-          .send({
-            message: "Forbidden access: Requires Moderator or Admin role.",
-          });
+        return res.status(403).send({
+          message: "Forbidden access: Requires Moderator or Admin role.",
+        });
       }
       next();
     };
@@ -367,6 +363,7 @@ async function run() {
 
     app.post("/applications", async (req, res) => {
       const application = req.body;
+      console.log(application)
       const scholarshipId = application.scholarshipId;
 
       try {
@@ -421,7 +418,6 @@ async function run() {
     // All Scholarship Api
     app.get("/all-scholarships", async (req, res) => {
       try {
-        // await run();
         const { search } = req.query;
         let query = {};
         if (search) {
@@ -431,17 +427,6 @@ async function run() {
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: error.message });
-      }
-    });
-
-    app.delete("/scholarships/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const result = await scholarshipsCollection.deleteOne(query);
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Not deleted" });
       }
     });
 
@@ -457,9 +442,9 @@ async function run() {
         }
 
         const query = { _id: new ObjectId(id) };
-        const scholarship = await addScholarsCollection.findOne(query);
+        const result = await addScholarsCollection.findOne(query);
 
-        if (!scholarship) {
+        if (!result) {
           return res
             .status(404)
             .send({ message: "Scholarship not found with this ID." });
@@ -467,6 +452,226 @@ async function run() {
         res.send(scholarship);
       } catch (error) {
         res.status(500).send({ message: "Invalid ID format or server error." });
+      }
+    });
+
+
+    /* app.get("/all-scholarships/checkout/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid ID format" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const result = await addScholarsCollection.findOne(query);
+
+        if (!result) {
+          return res.status(404).send({ message: "Scholarship not found" });
+        }
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Server error" });
+      }
+    }); */
+    
+
+    app.get("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid ID format" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+
+        const result = await addScholarsCollection.findOne(query);
+
+        if (!result) {
+          return res
+            .status(404)
+            .send({ message: "Scholarship not found in database." });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Single Scholarship Fetch Error:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
+    // Patch Update Scholarship Data (Moderator/Admin Only)
+    app.patch("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedData = req.body;
+
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .send({ message: "Invalid scholarship ID format." });
+        }
+
+        const docToUpdate = {
+          ...updatedData,
+          worldRank: parseInt(updatedData.worldRank),
+          tuitionFee: parseFloat(updatedData.tuitionFee),
+          serviceFee: parseFloat(updatedData.serviceFee),
+        };
+
+        const updateDoc = {
+          $set: docToUpdate,
+        };
+
+        const result = await addScholarsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          updateDoc
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Scholarship not found." });
+        }
+
+        res.send({
+          success: true,
+          message: "Scholarship updated successfully.",
+        });
+      } catch (error) {
+        console.error("Scholarship Update Error:", error);
+        res.status(500).send({ message: "Failed to update scholarship." });
+      }
+    });
+
+    app.delete("/scholarships/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await scholarshipsCollection.deleteOne(query);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Not deleted" });
+      }
+    });
+
+    // GET All Scholarships for Moderator/Admin
+    app.get(
+      "/moderator/all-scholarships",
+      verifyToken,
+      verifyModeratorOrAdmin,
+      async (req, res) => {
+        try {
+          const result = await addScholarsCollection
+            .find({})
+            .sort({ postDate: -1 })
+            .toArray();
+
+          res.send(result);
+        } catch (error) {
+          console.error("Moderator/Admin All Scholarships Fetch Error:", error);
+          res
+            .status(500)
+            .send({ message: "Failed to retrieve all scholarships." });
+        }
+      }
+    );
+
+    // Get Single Scholarship Details (For Moderator/Admin Editing)
+    app.get("/scholarship/details/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        if (!ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .send({ message: "Invalid scholarship ID format." });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const scholarship = await addScholarsCollection.findOne(query);
+
+        if (!scholarship) {
+          return res.status(404).send({ message: "Scholarship not found." });
+        }
+
+        res.send(scholarship);
+      } catch (error) {
+        console.error("Fetch Single Scholarship Error:", error);
+        res
+          .status(500)
+          .send({ message: "Failed to retrieve scholarship details." });
+      }
+    });
+
+    // Scholarship Delete API
+    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        console.log(
+          "Attempting to delete from addScholars collection with ID:",
+          id
+        );
+
+        const query = { _id: new ObjectId(id) };
+        const result = await addScholarsCollection.deleteOne(query);
+
+        console.log("Final DB Result:", result);
+        res.send(result);
+      } catch (error) {
+        console.error("Delete Error:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+
+    // Get reviews for a specific scholarship ID
+    app.get("/reviews/scholarship/:id", async (req, res) => {});
+
+    // POST User Review
+    app.post("/reviews", verifyToken, async (req, res) => {
+      try {
+        const reviewData = req.body;
+
+        if (
+          !reviewData.reviewerEmail ||
+          !reviewData.scholarshipId ||
+          !reviewData.rating
+        ) {
+          return res.status(400).send({
+            message:
+              "Missing required review fields (email, scholarship ID, or rating).",
+          });
+        }
+
+        const reviewToInsert = {
+          ...reviewData,
+          createdAt: new Date(),
+        };
+
+        const result = await reviewsCollection.insertOne(reviewToInsert);
+        res.status(201).send({
+          message: "Review submitted successfully!",
+          reviewId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error submitting review:", error);
+        res.status(500).send({ message: "Failed to submit review." });
+      }
+    });
+
+    // Extra Review for see
+    app.get("/reviews/:scholarshipId", async (req, res) => {
+      try {
+        const scholarshipId = req.params.scholarshipId;
+
+        const reviews = await reviewsCollection
+          .find({ scholarshipId: scholarshipId })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error("Error fetching reviews:", error);
+        res.status(500).send({ message: "Failed to retrieve reviews." });
       }
     });
 
@@ -739,28 +944,6 @@ async function run() {
     });
     // Analytics api End
 
-    // GET All Scholarships for Moderator/Admin
-    app.get(
-      "/moderator/all-scholarships",
-      verifyToken,
-      verifyModeratorOrAdmin,
-      async (req, res) => {
-        try {
-          const result = await addScholarsCollection
-            .find({})
-            .sort({ postDate: -1 })
-            .toArray();
-
-          res.send(result);
-        } catch (error) {
-          console.error("Moderator/Admin All Scholarships Fetch Error:", error);
-          res
-            .status(500)
-            .send({ message: "Failed to retrieve all scholarships." });
-        }
-      }
-    );
-
     // Get Pending Applications for Moderator Review
     app.get(
       "/moderator/pending-applications",
@@ -855,95 +1038,6 @@ async function run() {
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Feedback submission failed" });
-      }
-    });
-
-    // Get Single Scholarship Details (For Moderator/Admin Editing)
-    app.get("/scholarship/details/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-
-        if (!ObjectId.isValid(id)) {
-          return res
-            .status(400)
-            .send({ message: "Invalid scholarship ID format." });
-        }
-
-        const query = { _id: new ObjectId(id) };
-        const scholarship = await addScholarsCollection.findOne(query);
-
-        if (!scholarship) {
-          return res.status(404).send({ message: "Scholarship not found." });
-        }
-
-        res.send(scholarship);
-      } catch (error) {
-        console.error("Fetch Single Scholarship Error:", error);
-        res
-          .status(500)
-          .send({ message: "Failed to retrieve scholarship details." });
-      }
-    });
-
-    // Scholarship Delete API
-    app.delete("/all-scholarship/:id", verifyToken, async (req, res) => {
-      try {
-        const id = req.params.id;
-        console.log(
-          "Attempting to delete from addScholars collection with ID:",
-          id
-        );
-
-        const query = { _id: new ObjectId(id) };
-        const result = await addScholarsCollection.deleteOne(query);
-
-        console.log("Final DB Result:", result);
-        res.send(result);
-      } catch (error) {
-        console.error("Delete Error:", error);
-        res.status(500).send({ message: "Internal Server Error" });
-      }
-    });
-
-    // Patch Update Scholarship Data (Moderator/Admin Only)
-    app.patch("/scholarships/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updatedData = req.body;
-
-        if (!ObjectId.isValid(id)) {
-          return res
-            .status(400)
-            .send({ message: "Invalid scholarship ID format." });
-        }
-
-        const docToUpdate = {
-          ...updatedData,
-          worldRank: parseInt(updatedData.worldRank),
-          tuitionFee: parseFloat(updatedData.tuitionFee),
-          serviceFee: parseFloat(updatedData.serviceFee),
-        };
-
-        const updateDoc = {
-          $set: docToUpdate,
-        };
-
-        const result = await addScholarsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          updateDoc
-        );
-
-        if (result.matchedCount === 0) {
-          return res.status(404).send({ message: "Scholarship not found." });
-        }
-
-        res.send({
-          success: true,
-          message: "Scholarship updated successfully.",
-        });
-      } catch (error) {
-        console.error("Scholarship Update Error:", error);
-        res.status(500).send({ message: "Failed to update scholarship." });
       }
     });
 
@@ -1072,58 +1166,6 @@ async function run() {
       } catch (error) {
         console.error("Error fetching latest reviews:", error);
         res.status(500).send({ message: "Failed to fetch latest reviews." });
-      }
-    });
-
-    // Get reviews for a specific scholarship ID
-    app.get("/reviews/scholarship/:id", async (req, res) => {});
-
-    // POST User Review
-    app.post("/reviews", verifyToken, async (req, res) => {
-      try {
-        const reviewData = req.body;
-
-        if (
-          !reviewData.reviewerEmail ||
-          !reviewData.scholarshipId ||
-          !reviewData.rating
-        ) {
-          return res.status(400).send({
-            message:
-              "Missing required review fields (email, scholarship ID, or rating).",
-          });
-        }
-
-        const reviewToInsert = {
-          ...reviewData,
-          createdAt: new Date(),
-        };
-
-        const result = await reviewsCollection.insertOne(reviewToInsert);
-        res.status(201).send({
-          message: "Review submitted successfully!",
-          reviewId: result.insertedId,
-        });
-      } catch (error) {
-        console.error("Error submitting review:", error);
-        res.status(500).send({ message: "Failed to submit review." });
-      }
-    });
-
-    // Extra Review for see
-    app.get("/reviews/:scholarshipId", async (req, res) => {
-      try {
-        const scholarshipId = req.params.scholarshipId;
-
-        const reviews = await reviewsCollection
-          .find({ scholarshipId: scholarshipId })
-          .sort({ createdAt: -1 })
-          .toArray();
-
-        res.send(reviews);
-      } catch (error) {
-        console.error("Error fetching reviews:", error);
-        res.status(500).send({ message: "Failed to retrieve reviews." });
       }
     });
 
