@@ -382,7 +382,7 @@ async function run() {
           }
 
           if (objectIdScholarshipId) {
-            const updateResult = await scholarshipsCollection.updateOne(
+            const updateResult = await scholarshipCollection.updateOne(
               { _id: objectIdScholarshipId },
               {
                 $inc: {
@@ -449,8 +449,9 @@ async function run() {
             .status(404)
             .send({ message: "Scholarship not found with this ID." });
         }
-        res.send(scholarship);
+        res.send(result);
       } catch (error) {
+        console.log(error)
         res.status(500).send({ message: "Invalid ID format or server error.", error });
       }
     });
