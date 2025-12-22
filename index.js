@@ -451,7 +451,7 @@ async function run() {
         }
         res.send(scholarship);
       } catch (error) {
-        res.status(500).send({ message: "Invalid ID format or server error." });
+        res.status(500).send({ message: "Invalid ID format or server error.", error });
       }
     });
 
